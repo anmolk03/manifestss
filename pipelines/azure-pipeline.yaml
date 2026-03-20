@@ -20,26 +20,44 @@ stages:
     pool:
       name: self-hosted
     steps:
-    # Install Helm
+    # 1️⃣ Install kubectl
+    - script: |
+        echo "Downloading kubectl..."
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/
+        kubectl version --client
+      displayName: 'Install kubectl'
+
+    # 2️⃣ Get AKS credentials
+    - task: AzureCLI@2
+      displayName: 'Get AKS credentials'
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          az aks get-credentials --resource-group $(aksResourceGroup) --name $(aksClusterName) --overwrite-existing
+          kubectl get nodes
+
+    # 3️⃣ Install Helm
     - task: HelmInstaller@1
       displayName: 'Install Helm'
       inputs:
         helmVersionToInstall: 'latest'
 
-    # Add NGINX Helm repo
+    # 4️⃣ Add NGINX Helm repo
     - script: |
         helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
         helm repo update
       displayName: 'Add NGINX Helm Repo'
 
-    # Deploy NGINX Ingress Controller with public IP
+    # 5️⃣ Deploy NGINX Ingress Controller with public IP
     - task: HelmDeploy@0
       displayName: 'Deploy NGINX Ingress Controller'
       inputs:
-        connectionType: 'Azure Resource Manager'
-        azureSubscription: '$(azureServiceConnection)'
-        azureResourceGroup: '$(aksResourceGroup)'
-        kubernetesCluster: '$(aksClusterName)'
+        connectionType: 'Kubernetes Service Connection'
+        kubernetesServiceEndpoint: '$(azureServiceConnection)'
         namespace: '$(helmNamespace)'
         command: 'upgrade'
         chartType: 'Name'
