@@ -1,0 +1,51 @@
+##git remote set-url origin https://<username>@github.com/anmolk03/manifestss.git
+##git push
+
+trigger:
+- main
+
+variables:
+  azureServiceConnection: 'azure-svc-conn'  # existing service connection
+  aksResourceGroup: 'playgroundcleansub0'
+  aksClusterName: 'aks-private-cluster'
+  helmReleaseName: 'ingress-nginx'
+  helmNamespace: 'ingress-nginx'
+
+stages:
+- stage: InstallIngress
+  displayName: 'Install NGINX Ingress Controller'
+  jobs:
+  - job: HelmInstall
+    displayName: 'Helm Deploy NGINX Ingress Controller'
+    pool:
+      name: self-hosted
+    steps:
+    # Install Helm
+    - task: HelmInstaller@1
+      displayName: 'Install Helm'
+      inputs:
+        helmVersionToInstall: 'latest'
+
+    # Add NGINX Helm repo
+    - script: |
+        helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+        helm repo update
+      displayName: 'Add NGINX Helm Repo'
+
+    # Deploy NGINX Ingress Controller with public IP
+    - task: HelmDeploy@0
+      displayName: 'Deploy NGINX Ingress Controller'
+      inputs:
+        connectionType: 'Azure Resource Manager'
+        azureSubscription: '$(azureServiceConnection)'
+        azureResourceGroup: '$(aksResourceGroup)'
+        kubernetesCluster: '$(aksClusterName)'
+        namespace: '$(helmNamespace)'
+        command: 'upgrade'
+        chartType: 'Name'
+        chartName: 'ingress-nginx/ingress-nginx'
+        releaseName: '$(helmReleaseName)'
+        install: true
+        overrideValues: |
+          controller.service.type=LoadBalancer
+          controller.replicaCount=2
