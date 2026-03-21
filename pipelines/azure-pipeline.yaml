@@ -1,69 +1,101 @@
 ##git remote set-url origin https://<username>@github.com/anmolk03/manifestss.git
 ##git push
 
-trigger:
-- main
+# trigger:
+# - main
+
+# variables:
+#   azureServiceConnection: 'azure-svc-conn'  # existing service connection
+#   aksResourceGroup: 'playgroundcleansub0'
+#   aksClusterName: 'aks-private-cluster'
+#   helmReleaseName: 'ingress-nginx'
+#   helmNamespace: 'ingress-nginx'
+
+# stages:
+# - stage: InstallIngress
+#   displayName: 'Install NGINX Ingress Controller'
+#   jobs:
+#   - job: HelmInstall
+#     displayName: 'Helm Deploy NGINX Ingress Controller'
+#     pool:
+#       name: self-hosted
+#     steps:
+#     # 1️⃣ Install kubectl
+#     - script: |
+#         echo "Downloading kubectl..."
+#         curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+#         chmod +x kubectl
+#         sudo mv kubectl /usr/local/bin/
+#         kubectl version --client
+#       displayName: 'Install kubectl'
+
+#     # 2️⃣ Get AKS credentials
+#     - task: AzureCLI@2
+#       displayName: 'Get AKS credentials'
+#       inputs:
+#         azureSubscription: '$(azureServiceConnection)'
+#         scriptType: 'bash'
+#         scriptLocation: 'inlineScript'
+#         inlineScript: |
+#           az aks get-credentials --resource-group $(aksResourceGroup) --name $(aksClusterName) --overwrite-existing
+#           kubectl get nodes
+
+#     # 3️⃣ Install Helm
+#     - task: HelmInstaller@1
+#       displayName: 'Install Helm'
+#       inputs:
+#         helmVersionToInstall: 'latest'
+
+#     # 4️⃣ Add NGINX Helm repo
+#     - script: |
+#         helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+#         helm repo update
+#       displayName: 'Add NGINX Helm Repo'
+
+#     # 5️⃣ Deploy NGINX Ingress Controller with public IP
+#     - task: HelmDeploy@0
+#       displayName: 'Deploy NGINX Ingress Controller'
+#       inputs:
+#         connectionType: 'Kubernetes Service Connection'
+#         kubernetesServiceEndpoint: '$(azureServiceConnection)'
+#         namespace: '$(helmNamespace)'
+#         command: 'upgrade'
+#         chartType: 'Name'
+#         chartName: 'ingress-nginx/ingress-nginx'
+#         releaseName: '$(helmReleaseName)'
+#         install: true
+#         overrideValues: |
+#           controller.service.type=LoadBalancer
+#           controller.replicaCount=2
+
+
+trigger: none
+
+pool:
+  vmImage: 'ubuntu-latest'
 
 variables:
-  azureServiceConnection: 'azure-svc-conn'  # existing service connection
-  aksResourceGroup: 'playgroundcleansub0'
-  aksClusterName: 'aks-private-cluster'
-  helmReleaseName: 'ingress-nginx'
-  helmNamespace: 'ingress-nginx'
+  resourceGroup: 'playgroundcleansub0'
+  aksName: 'aks-private-cluster'
 
-stages:
-- stage: InstallIngress
-  displayName: 'Install NGINX Ingress Controller'
-  jobs:
-  - job: HelmInstall
-    displayName: 'Helm Deploy NGINX Ingress Controller'
-    pool:
-      name: self-hosted
-    steps:
-    # 1️⃣ Install kubectl
-    - script: |
-        echo "Downloading kubectl..."
-        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-        chmod +x kubectl
-        sudo mv kubectl /usr/local/bin/
-        kubectl version --client
-      displayName: 'Install kubectl'
+steps:
+- task: AzureCLI@2
+  displayName: 'Install NGINX via Command Invoke'
+  inputs:
+    azureSubscription: 'azure-svc-conn' # Your ARM Service Connection
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      # 1. Add Helm Repo inside the cluster via invoke
+      az aks command invoke \
+        --resource-group $(resourceGroup) \
+        --name $(aksName) \
+        --command "helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx && helm repo update"
 
-    # 2️⃣ Get AKS credentials
-    - task: AzureCLI@2
-      displayName: 'Get AKS credentials'
-      inputs:
-        azureSubscription: '$(azureServiceConnection)'
-        scriptType: 'bash'
-        scriptLocation: 'inlineScript'
-        inlineScript: |
-          az aks get-credentials --resource-group $(aksResourceGroup) --name $(aksClusterName) --overwrite-existing
-          kubectl get nodes
+      # 2. Deploy NGINX
+      # We use --set to ensure it gets a Public IP for the ingress (as per your end goal)
+      az aks command invoke \
+        --resource-group $(resourceGroup) \
+        --name $(aksName) \
+        --command "helm upgrade --install nginx-ingress ingress-nginx/ingress-nginx --namespace ingress-basic --create-namespace"
 
-    # 3️⃣ Install Helm
-    - task: HelmInstaller@1
-      displayName: 'Install Helm'
-      inputs:
-        helmVersionToInstall: 'latest'
-
-    # 4️⃣ Add NGINX Helm repo
-    - script: |
-        helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-        helm repo update
-      displayName: 'Add NGINX Helm Repo'
-
-    # 5️⃣ Deploy NGINX Ingress Controller with public IP
-    - task: HelmDeploy@0
-      displayName: 'Deploy NGINX Ingress Controller'
-      inputs:
-        connectionType: 'Kubernetes Service Connection'
-        kubernetesServiceEndpoint: '$(azureServiceConnection)'
-        namespace: '$(helmNamespace)'
-        command: 'upgrade'
-        chartType: 'Name'
-        chartName: 'ingress-nginx/ingress-nginx'
-        releaseName: '$(helmReleaseName)'
-        install: true
-        overrideValues: |
-          controller.service.type=LoadBalancer
-          controller.replicaCount=2
